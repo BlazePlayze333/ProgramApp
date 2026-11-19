@@ -1,0 +1,61 @@
+name: Build App Program Adder
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish single EXE
+        shell: pwsh
+        run: >-
+          dotnet publish AppProgramAdder.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:PublishTrimmed=false
+          -p:DebugType=None -p:DebugSymbols=false
+          -o publish
+
+      - name: Verify single-file output
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem publish -File -Recurse)
+          if ($files.Count -ne 1 -or $files[0].Name -ne 'AppProgramAdder.exe') {
+            Get-ChildItem publish -Recurse
+            throw 'Expected only AppProgramAdder.exe in publish output.'
+          }
+
+      - name: Save EXE as build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppProgramAdder-win-x64
+          path: publish/AppProgramAdder.exe
+          if-no-files-found: error
+
+      - name: Attach EXE to published release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$env:RELEASE_TAG" "publish/AppProgramAdder.exe" --clobber
